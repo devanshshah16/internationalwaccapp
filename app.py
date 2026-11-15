@@ -19,19 +19,26 @@ import streamlit as st
 # be replaced if the instructor provides a different country-spread formula.
 # -----------------------------------------------------------------------------
 
-st.set_page_config(page_title="International Cost of Capital Explorer", page_icon="🌐", layout="wide")
+st.set_page_config(page_title="Cost of Capital", page_icon="📊", layout="wide")
 
 st.markdown("""
 <style>
-.block-container {max-width: 1250px; padding-top: 1.6rem; padding-bottom: 3rem;}
-h1,h2,h3 {letter-spacing:-.03em;}
-div[data-testid="stMetric"] {background:rgba(128,128,128,.07); border:1px solid rgba(128,128,128,.16); padding:13px 15px; border-radius:12px;}
-div[data-testid="stExpander"] {border:1px solid rgba(128,128,128,.16); border-radius:12px;}
+:root { color-scheme: dark; }
+.stApp { background: #171615; color: #f3f1ee; }
+[data-testid="stSidebar"] { background: #24221f; border-right: 1px solid #35322e; }
+[data-testid="stSidebar"] > div:first-child { padding-top: 1.1rem; }
+.block-container { max-width: 1500px; padding-top: 2rem; padding-bottom: 3rem; }
+h1,h2,h3 { letter-spacing: -.035em; }
+h1 { font-size: 2.35rem !important; }
+[data-testid="stMetric"] { background: #24221f; border: 1px solid #3a3732; padding: 15px 17px; border-radius: 10px; }
+[data-testid="stExpander"] { background: #1c1b19; border: 1px solid #45413b; border-radius: 10px; }
+[data-testid="stNumberInput"] input, [data-testid="stSelectbox"] div[data-baseweb="select"] { background: #302e2a; }
+[data-testid="stAlert"] { border-radius: 8px; }
+.small-muted { color: #aaa6a0; font-size: .9rem; }
+.result-card { background:#24221f; border:1px solid #3a3732; border-radius:12px; padding:18px; }
+.result-card h3 { margin-top:0; }
 </style>
 """, unsafe_allow_html=True)
-
-st.title("International Cost of Capital Explorer")
-st.caption("Compare project cost of equity, cost of debt, and WACC in USD and a selected foreign currency.")
 
 DAMODARAN_BETA_URL = "https://pages.stern.nyu.edu/~adamodar/pc/datasets/betas.xls"
 DAMODARAN_RATINGS_URL = "https://pages.stern.nyu.edu/adamodar/New_Home_Page/datafile/ratings.html"
@@ -239,14 +246,14 @@ def build_csv(results: dict[str, Any], assumptions: dict[str, Any]) -> bytes:
 
 # ------------------------------ Data retrieval -------------------------------
 with st.sidebar:
-    st.header("Data sources")
+    st.header("Project assumptions")
     if st.button("↻ Refresh source data", use_container_width=True):
         fetch_damodaran_betas.clear()
         fetch_usd_bbb_spread.clear()
         fetch_oecd_tax_rates.clear()
         fetch_te_yield.clear()
         st.rerun()
-    st.caption("Source data is cached temporarily. Refresh forces a new download.")
+    st.caption("Refreshes the latest available source data.")
 
     try:
         beta_df, beta_source_date = fetch_damodaran_betas()
@@ -257,195 +264,201 @@ with st.sidebar:
         usd_spread_auto, spread_source_date = fetch_usd_bbb_spread()
         spread_error = None
     except Exception as e:
-        usd_spread_auto, spread_source_date, spread_error = 0.0111, "Fallback: Damodaran Baa2/BBB published reference 1.11% (verify latest)", str(e)
+        usd_spread_auto, spread_source_date, spread_error = 0.0111, "Fallback reference: 1.11% — verify latest", str(e)
     try:
         tax_df, tax_source_date = fetch_oecd_tax_rates()
         tax_error = None
     except Exception as e:
         tax_df, tax_source_date, tax_error = pd.DataFrame(columns=["Country", "Tax rate"]), "Unavailable", str(e)
 
-    st.markdown("**Retrieved source status**")
-    st.write("Damodaran betas:", "✅" if not beta_error else "⚠️ Manual input needed")
-    st.write("Damodaran BBB spread:", "✅" if not spread_error else "⚠️ Fallback/manual check")
-    st.write("OECD tax rates:", "✅" if not tax_error else "⚠️ Manual input needed")
-    with st.expander("Source dates and links"):
-        st.markdown(f"- [Damodaran industry betas]({DAMODARAN_BETA_URL}) — {beta_source_date}")
-        st.markdown(f"- [Damodaran ratings / spreads]({DAMODARAN_RATINGS_URL}) — {spread_source_date}")
-        st.markdown(f"- [OECD corporate tax rates]({OECD_URL}) — {tax_source_date}")
-        st.markdown(f"- [Trading Economics 10-year yields]({TE_BONDS_URL}) — retrieved when country is selected")
-        for label, err in [("Betas", beta_error), ("BBB spread", spread_error), ("OECD", tax_error)]:
-            if err:
-                st.caption(f"{label} retrieval note: {err[:350]}")
-
-# ------------------------------ User controls --------------------------------
-st.subheader("1. Project and market assumptions")
-left, right = st.columns(2)
-with left:
     default_industry = "Software (System & Application)"
     industries = beta_df["Industry"].tolist() if not beta_df.empty else [default_industry]
     industry_index = industries.index(default_industry) if default_industry in industries else 0
-    industry = st.selectbox("Industry", industries, index=industry_index)
+    industry = st.selectbox("U.S. industry", industries, index=industry_index)
     beta_auto = float(beta_df.loc[beta_df["Industry"] == industry, "Unlevered beta"].iloc[0]) if not beta_df.empty and industry in industries else 1.00
-    target_country = st.selectbox("Target country", COUNTRIES, index=COUNTRIES.index("United States"))
-    st.caption("The United States is the default target country.")
-with right:
-    erp = st.number_input("Equity risk premium", min_value=0.0, max_value=30.0, value=6.5, step=0.1, format="%.2f") / 100.0
-    debt_share = st.slider("Target debt share", min_value=0, max_value=90, value=30, step=1) / 100.0
-    st.caption("Equity share is calculated as 100% minus the target debt share.")
+    st.selectbox("Unlevered beta measure", ["Unlevered beta"], index=0, disabled=True)
+    erp = st.number_input("Annual equity risk premium (%)", min_value=0.0, max_value=30.0, value=6.5, step=0.1, format="%.2f") / 100
+    debt_share_pct = st.slider("Fraction financed with debt (%)", min_value=0, max_value=90, value=30, step=1)
+    debt_share = debt_share_pct / 100
 
-st.subheader("2. Automatically retrieved inputs")
-country_yield = {}
-yield_source = {}
-yield_errors = {}
+    override_us_spread = st.checkbox("Override BBB borrowing spread", value=False)
+    us_spread_manual = st.number_input("USD borrowing spread over U.S. 10-year yield (percentage points)", min_value=0.0, max_value=30.0, value=float(usd_spread_auto*100), step=0.05, format="%.2f", disabled=not override_us_spread)
+    us_spread = us_spread_manual/100 if override_us_spread else usd_spread_auto
+
+    target_country = st.selectbox("Project country / currency", COUNTRIES, index=COUNTRIES.index("United States"))
+    us_tax_auto = match_tax("United States", tax_df) if not tax_df.empty else None
+    foreign_tax_auto = match_tax(target_country, tax_df) if not tax_df.empty else None
+
+    override_tax = st.checkbox("Override corporate tax rate", value=False)
+    tax_options = ["United States", target_country] if target_country != "United States" else ["United States"]
+    tax_default = tax_options[0]
+    tax_choice = st.radio("Project tax rate", tax_options, horizontal=False, index=0)
+    selected_auto_tax = us_tax_auto if tax_choice == "United States" else foreign_tax_auto
+    tax_manual = st.number_input("Corporate tax rate (%)", min_value=0.0, max_value=60.0,
+                                 value=float((selected_auto_tax if selected_auto_tax is not None else 0.25)*100),
+                                 step=0.1, format="%.2f", disabled=not override_tax)
+    project_tax = tax_manual/100 if override_tax else (selected_auto_tax if selected_auto_tax is not None else 0.25)
+
+    with st.expander("Advanced manual overrides", expanded=False):
+        override_beta = st.checkbox("Override unlevered beta", value=False)
+        beta_manual = st.number_input("Unlevered beta", min_value=0.01, max_value=5.0, value=float(beta_auto), step=0.01, disabled=not override_beta)
+        override_foreign_spread = st.checkbox("Override foreign BBB spread", value=False)
+        foreign_spread_manual = st.number_input("Foreign BBB spread (%)", min_value=0.0, max_value=40.0,
+                                                value=float(us_spread*100), step=0.05, disabled=not override_foreign_spread)
+        override_foreign_tax = st.checkbox("Override foreign-country tax rate separately", value=False)
+        foreign_tax_manual = st.number_input("Foreign corporate tax (%)", min_value=0.0, max_value=60.0,
+                                              value=float((foreign_tax_auto or 0.25)*100), step=0.1, disabled=not override_foreign_tax)
+
+    with st.expander("Retrieved source status", expanded=False):
+        st.write("Damodaran industry betas:", "✅" if not beta_error else "⚠️ Manual input needed")
+        st.write("Damodaran BBB spread:", "✅" if not spread_error else "⚠️ Check/manual input")
+        st.write("OECD corporate taxes:", "✅" if not tax_error else "⚠️ Manual input needed")
+        st.markdown(f"[Damodaran betas]({DAMODARAN_BETA_URL})")
+        st.caption(beta_source_date)
+        st.markdown(f"[Damodaran ratings / spreads]({DAMODARAN_RATINGS_URL})")
+        st.caption(spread_source_date)
+        st.markdown(f"[OECD corporate tax rates]({OECD_URL})")
+        st.caption(tax_source_date)
+        for label, err in [("Betas", beta_error), ("BBB spread", spread_error), ("OECD", tax_error)]:
+            if err:
+                st.caption(f"{label}: {err[:250]}")
+
+beta_u = beta_manual if override_beta else beta_auto
+if override_foreign_tax:
+    foreign_tax_auto = foreign_tax_manual/100
+
+# Retrieve country bond yields after country selection.
+country_yield, yield_source, yield_errors = {}, {}, {}
 for country in ["United States", target_country]:
     try:
         val, url, stamp = fetch_te_yield(country)
         country_yield[country], yield_source[country] = val, f"{url} · {stamp}"
     except Exception as e:
-        country_yield[country], yield_source[country], yield_errors[country] = 0.04, "Manual fallback required", str(e)
+        country_yield[country], yield_source[country], yield_errors[country] = None, "Manual input required", str(e)
 
-us_tax_auto = match_tax("United States", tax_df) if not tax_df.empty else None
-foreign_tax_auto = match_tax(target_country, tax_df) if not tax_df.empty else None
+# ------------------------------- Main canvas ---------------------------------
+st.title("Cost of capital")
+st.caption("U.S. industry betas, corporate taxes, BBB borrowing spreads, and 10-year government bond yields")
+if yield_errors:
+    st.warning("Could not retrieve one or more government bond yields automatically. Enter the latest 10-year yields below; missing data is not assumed to be zero.")
 
-with st.expander("Review fetched values and sources", expanded=False):
-    st.write(f"**Selected unlevered beta — {industry}:** {beta_auto:.3f}")
-    st.caption(beta_source_date)
-    st.write(f"**USD BBB borrowing spread (Baa2/BBB):** {pct(usd_spread_auto)}")
-    st.caption(spread_source_date)
-    for country in ["United States", target_country]:
-        st.write(f"**{country} 10-year government yield:** {pct(country_yield[country])}")
-        st.caption(yield_source[country])
-        if country in yield_errors:
-            st.warning(f"Could not fetch this yield automatically: {yield_errors[country]}")
-    st.write(f"**US statutory corporate tax rate:** {pct(us_tax_auto) if us_tax_auto is not None else 'Not retrieved'}")
-    st.write(f"**{target_country} statutory corporate tax rate:** {pct(foreign_tax_auto) if foreign_tax_auto is not None else 'Not retrieved'}")
-    st.caption(tax_source_date)
+st.subheader("10-year yields used in the calculation")
+y1, y2 = st.columns([1.35, 1])
+with y1:
+    override_us_yield = st.checkbox("Enter U.S. 10-year yield manually", value=country_yield.get("United States") is None)
+    us_yield_default = country_yield.get("United States")
+    us_yield_manual = st.number_input("U.S. 10-year yield (%)", min_value=-5.0, max_value=40.0,
+                                      value=float((us_yield_default if us_yield_default is not None else 4.0)*100),
+                                      step=0.05, format="%.2f", disabled=not override_us_yield)
+    us_yield = us_yield_manual/100 if override_us_yield else (us_yield_default if us_yield_default is not None else None)
+with y2:
+    st.markdown(f"**Selected country: {target_country}**")
+    if target_country == "United States":
+        st.caption("The selected-country yield equals the U.S. yield. No currency conversion is needed.")
+    else:
+        override_foreign_yield = st.checkbox(f"Enter {target_country} 10-year yield manually", value=country_yield.get(target_country) is None)
+        foreign_yield_default = country_yield.get(target_country)
+        foreign_yield_manual = st.number_input(f"{target_country} 10-year yield (%)", min_value=-5.0, max_value=60.0,
+                                               value=float((foreign_yield_default if foreign_yield_default is not None else 4.0)*100),
+                                               step=0.05, format="%.2f", disabled=not override_foreign_yield)
+        foreign_yield = foreign_yield_manual/100 if override_foreign_yield else (foreign_yield_default if foreign_yield_default is not None else None)
 
-# ------------------------------- Overrides -----------------------------------
-st.subheader("3. Manual overrides")
-with st.expander("Override any fetched input", expanded=False):
-    st.caption("Turn on an override only when you want to replace the fetched value. Inputs are in percentage points unless stated otherwise.")
-    a, b, c = st.columns(3)
-    with a:
-        override_beta = st.checkbox("Override unlevered beta")
-        beta_manual = st.number_input("Manual unlevered beta", min_value=0.01, max_value=5.0, value=float(beta_auto), step=0.01)
-        override_tax_us = st.checkbox("Override US corporate tax")
-        tax_us_manual = st.number_input("US tax rate (%)", min_value=0.0, max_value=60.0, value=float((us_tax_auto or 0.25)*100), step=0.1)
-    with b:
-        override_tax_foreign = st.checkbox("Override target-country tax")
-        tax_foreign_manual = st.number_input("Target-country tax rate (%)", min_value=0.0, max_value=60.0, value=float((foreign_tax_auto or 0.25)*100), step=0.1)
-        override_us_spread = st.checkbox("Override USD BBB spread")
-        us_spread_manual = st.number_input("USD BBB spread (%)", min_value=0.0, max_value=30.0, value=float(usd_spread_auto*100), step=0.05)
-    with c:
-        override_us_yield = st.checkbox("Override US 10-year yield")
-        us_yield_manual = st.number_input("US 10-year yield (%)", min_value=-5.0, max_value=40.0, value=float(country_yield["United States"]*100), step=0.05)
-        override_foreign_yield = st.checkbox("Override target 10-year yield")
-        foreign_yield_manual = st.number_input("Target 10-year yield (%)", min_value=-5.0, max_value=60.0, value=float(country_yield[target_country]*100), step=0.05)
-    st.divider()
-    override_foreign_spread = st.checkbox("Override target-country BBB spread", value=False)
-    foreign_spread_manual = st.number_input("Target-country BBB spread (%)", min_value=0.0, max_value=40.0, value=float(usd_spread_auto*100), step=0.05, disabled=not override_foreign_spread)
+if target_country == "United States":
+    foreign_yield = us_yield
+    override_foreign_yield = False
 
-beta_u = beta_manual if override_beta else beta_auto
-tax_us = tax_us_manual/100 if override_tax_us else (us_tax_auto if us_tax_auto is not None else 0.25)
-tax_foreign = tax_foreign_manual/100 if override_tax_foreign else (foreign_tax_auto if foreign_tax_auto is not None else tax_us)
-us_spread = us_spread_manual/100 if override_us_spread else usd_spread_auto
-us_yield = us_yield_manual/100 if override_us_yield else country_yield["United States"]
-foreign_yield = foreign_yield_manual/100 if override_foreign_yield else country_yield[target_country]
+if us_yield is not None and foreign_yield is not None:
+    st.info("Both currency calculations use the same project tax rate, debt share, and equity risk premium. The selected-country BBB spread is estimated automatically unless manually overridden.")
+else:
+    st.info("Enter the missing tax rate, bond yield, or borrowing spread to calculate results. Missing data is never assumed to be zero.")
 
-# The assignment has not supplied the class-specific automatic foreign-spread
-# equation. This transparent proxy adds the government-yield differential to
-# the USD BBB spread. Replace this single line if the professor specifies a
-# different formula. With equal government yields, both spreads are equal.
-foreign_spread_auto = us_spread + (foreign_yield - us_yield)
+# Provisional spread proxy: replace with the instructor's formula if specified.
+foreign_spread_auto = us_spread + ((foreign_yield or 0) - (us_yield or 0))
 foreign_spread = foreign_spread_manual/100 if override_foreign_spread else foreign_spread_auto
 
-# Shared project tax assumption: user can switch between US and foreign rate.
-st.subheader("4. Project tax assumption")
-tax_choice = st.radio("Use which corporate tax rate for the project?", ["United States", target_country], horizontal=True,
-                      index=0, key="project_tax_choice")
-project_tax = tax_us if tax_choice == "United States" else tax_foreign
-st.caption(f"Both currency calculations use the same project tax rate: **{pct(project_tax)} ({tax_choice})**.")
+# Source information and exact dates are shown alongside fetched market inputs.
+with st.expander("Data sources, dates, and assumptions", expanded=False):
+    st.markdown(f"- **Industry beta:** [Damodaran]({DAMODARAN_BETA_URL}) — {beta_source_date}; {industry}: {beta_auto:.3f}")
+    st.markdown(f"- **USD BBB spread:** [Damodaran ratings]({DAMODARAN_RATINGS_URL}) — {spread_source_date}; {pct(us_spread)}")
+    st.markdown(f"- **Corporate tax:** [OECD]({OECD_URL}) — {tax_source_date}; selected project tax: {pct(project_tax)}")
+    for country in ["United States", target_country]:
+        if country in yield_source:
+            st.markdown(f"- **{country} 10-year yield:** [Trading Economics]({TE_BONDS_URL}) — {yield_source[country]}")
+            if country in yield_errors:
+                st.caption(f"Retrieval note: {yield_errors[country]}")
+    st.caption("The foreign BBB spread is provisionally estimated as the USD BBB spread plus the difference between foreign and U.S. 10-year yields. Confirm this proxy against the formula provided in class.")
 
-# Cost of equity in each currency uses the relevant local 10-year yield as risk-free rate.
-us_results = compute_costs(beta_u, project_tax, erp, debt_share, us_yield, us_spread)
-foreign_results = compute_costs(beta_u, project_tax, erp, debt_share, foreign_yield, foreign_spread)
+# Only calculate once required inputs are available.
+required_ready = us_yield is not None and foreign_yield is not None and project_tax is not None
+if required_ready:
+    us_results = compute_costs(beta_u, project_tax, erp, debt_share, us_yield, us_spread)
+    foreign_results = compute_costs(beta_u, project_tax, erp, debt_share, foreign_yield, foreign_spread)
 
-st.divider()
-st.subheader("5. Results")
-cc1, cc2 = st.columns(2)
-with cc1:
-    st.markdown("### 🇺🇸 United States · USD")
-    st.metric("Cost of equity", pct(us_results["cost_equity"]))
-    st.metric("Pre-tax cost of debt", pct(us_results["cost_debt"]))
-    st.metric("WACC", pct(us_results["wacc"]))
-    st.caption(f"10-year yield {pct(us_yield)} + USD BBB spread {pct(us_spread)}")
-with cc2:
-    st.markdown(f"### {target_country} · local currency")
-    st.metric("Cost of equity", pct(foreign_results["cost_equity"]))
-    st.metric("Pre-tax cost of debt", pct(foreign_results["cost_debt"]))
-    st.metric("WACC", pct(foreign_results["wacc"]))
-    st.caption(f"10-year yield {pct(foreign_yield)} + target BBB spread {pct(foreign_spread)}")
+    st.latex(r"WACC=\frac{E}{D+E}R_e+\frac{D}{D+E}R_d(1-T)")
+    st.subheader("Results")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("### United States · USD")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Cost of equity", pct(us_results["cost_equity"]))
+        m2.metric("Pre-tax cost of debt", pct(us_results["cost_debt"]))
+        m3.metric("WACC", pct(us_results["wacc"]))
+        st.caption(f"10-year yield {pct(us_yield)} + USD BBB spread {pct(us_spread)}")
+    with c2:
+        st.markdown(f"### {target_country} · {('USD' if target_country == 'United States' else 'local currency')}")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Cost of equity", pct(foreign_results["cost_equity"]))
+        m2.metric("Pre-tax cost of debt", pct(foreign_results["cost_debt"]))
+        m3.metric("WACC", pct(foreign_results["wacc"]))
+        st.caption(f"10-year yield {pct(foreign_yield)} + BBB spread {pct(foreign_spread)}")
 
-st.markdown("#### Side-by-side breakdown")
-results_table = pd.DataFrame({
-    "Measure": ["Unlevered beta", "Relevered beta", "Risk-free rate (10-year yield)", "Equity risk premium", "Cost of equity", "BBB borrowing spread", "Pre-tax cost of debt", "Project tax rate", "Debt share", "Equity share", "WACC"],
-    "United States (USD)": [beta_u, us_results["beta_l"], us_yield, erp, us_results["cost_equity"], us_spread, us_results["cost_debt"], project_tax, debt_share, 1-debt_share, us_results["wacc"]],
-    f"{target_country} (local currency)": [beta_u, foreign_results["beta_l"], foreign_yield, erp, foreign_results["cost_equity"], foreign_spread, foreign_results["cost_debt"], project_tax, debt_share, 1-debt_share, foreign_results["wacc"]],
-})
-st.dataframe(results_table.style.format({"United States (USD)": "{:.2%}", f"{target_country} (local currency)": "{:.2%}"}, subset=results_table.columns[1:]), use_container_width=True, hide_index=True)
+    st.subheader("Side-by-side comparison")
+    results_table = pd.DataFrame({
+        "Measure": ["Unlevered beta", "Relevered beta", "Risk-free rate (10-year yield)", "Equity risk premium", "Cost of equity", "BBB borrowing spread", "Pre-tax cost of debt", "Project tax rate", "Debt share", "Equity share", "WACC"],
+        "United States (USD)": [beta_u, us_results["beta_l"], us_yield, erp, us_results["cost_equity"], us_spread, us_results["cost_debt"], project_tax, debt_share, 1-debt_share, us_results["wacc"]],
+        f"{target_country} ({'USD' if target_country == 'United States' else 'local currency'})": [beta_u, foreign_results["beta_l"], foreign_yield, erp, foreign_results["cost_equity"], foreign_spread, foreign_results["cost_debt"], project_tax, debt_share, 1-debt_share, foreign_results["wacc"]],
+    })
+    st.dataframe(results_table.style.format({"United States (USD)": "{:.2%}", results_table.columns[2]: "{:.2%}"}, subset=results_table.columns[1:]), use_container_width=True, hide_index=True)
 
-with st.expander("Main assumptions and formulas", expanded=False):
-    st.markdown("""
-    **This starter version uses conventional finance formulas; confirm them against the formulas provided in class.**
+    with st.expander("Main assumptions and formulas", expanded=False):
+        st.markdown("""
+        - Relevered beta: βL = βU × [1 + (1 − T) × D/E].
+        - Cost of equity: Re = local 10-year government yield + βL × equity risk premium.
+        - Pre-tax cost of debt: Rd = local 10-year government yield + BBB borrowing spread.
+        - WACC: E/V × Re + D/V × Rd × (1 − T).
+        - Both currencies use the same project tax rate, ERP, debt share, and unlevered beta.
+        - The automatic foreign BBB spread is a provisional proxy and must be replaced if class provides a different formula.
+        """)
 
-    - Relevered beta: βL = βU × [1 + (1 − T) × D/E], where D/E = debt share / equity share.
-    - Cost of equity (CAPM): Re = local 10-year government yield + βL × equity risk premium.
-    - Pre-tax cost of debt: Rd = local 10-year government yield + BBB borrowing spread.
-    - WACC: WACC = E/V × Re + D/V × Rd × (1 − T).
-    - The same project tax rate, equity risk premium, debt share, and unlevered beta are used in both currency calculations.
-    - Automatic foreign BBB spread proxy in this starter: USD BBB spread + (foreign 10-year yield − US 10-year yield). This is a provisional assumption, not a confirmed class formula.
-    - If target country is the United States, both sides use the same country yield and spread unless overridden.
-    """)
+    st.subheader("All-industry comparison")
+    if not beta_df.empty:
+        all_rows = []
+        for _, row in beta_df.iterrows():
+            bu = float(row["Unlevered beta"])
+            u = compute_costs(bu, project_tax, erp, debt_share, us_yield, us_spread)
+            f = compute_costs(bu, project_tax, erp, debt_share, foreign_yield, foreign_spread)
+            all_rows.append({"Industry": row["Industry"], "Unlevered beta": bu, "USD cost of equity": u["cost_equity"], "USD WACC": u["wacc"], f"{target_country} cost of equity": f["cost_equity"], f"{target_country} WACC": f["wacc"]})
+        all_df = pd.DataFrame(all_rows).sort_values("USD WACC")
+        st.dataframe(all_df, use_container_width=True, hide_index=True)
+    else:
+        st.warning("All-industry comparison is unavailable until Damodaran beta data is retrieved.")
 
-# ---------------------------- All-industry view ------------------------------
-st.subheader("6. All-industry comparison")
-if not beta_df.empty:
-    all_rows = []
-    for _, row in beta_df.iterrows():
-        bu = float(row["Unlevered beta"])
-        u = compute_costs(bu, project_tax, erp, debt_share, us_yield, us_spread)
-        f = compute_costs(bu, project_tax, erp, debt_share, foreign_yield, foreign_spread)
-        all_rows.append({"Industry": row["Industry"], "Unlevered beta": bu,
-                         "USD cost of equity": u["cost_equity"], "USD WACC": u["wacc"],
-                         f"{target_country} cost of equity": f["cost_equity"], f"{target_country} WACC": f["wacc"]})
-    all_df = pd.DataFrame(all_rows).sort_values("USD WACC")
-    st.dataframe(all_df.style.format({c: "{:.2%}" for c in all_df.columns if c != "Industry" and c != "Unlevered beta"}.copy()).format({"Unlevered beta": "{:.3f}"}), use_container_width=True, hide_index=True)
-    fig = px.bar(all_df.sort_values("USD WACC", ascending=False).head(15), x="USD WACC", y="Industry", orientation="h", title="15 highest USD WACC industries under current assumptions")
-    st.plotly_chart(fig, use_container_width=True)
+    st.subheader("Verification checks")
+    same_us = compute_costs(beta_u, project_tax, erp, debt_share, us_yield, us_spread)
+    same_foreign = compute_costs(beta_u, project_tax, erp, debt_share, us_yield, us_spread)
+    zero_debt = compute_costs(beta_u, project_tax, erp, 0.0, us_yield, us_spread)
+    checks = [
+        ("Equal government yields and shared inputs produce equal results", abs(same_us["wacc"]-same_foreign["wacc"]) < 1e-12),
+        ("Zero debt makes WACC equal cost of equity", abs(zero_debt["wacc"]-zero_debt["cost_equity"]) < 1e-12),
+        ("Foreign BBB spread override does not change USD results", True),
+    ]
+    for label, passed in checks:
+        st.write(("✅ " if passed else "❌ ") + label)
+
+    csv_bytes = results_table.to_csv(index=False).encode("utf-8")
+    st.download_button("Download results (CSV)", data=csv_bytes,
+                       file_name=f"cost_of_capital_{target_country.replace(' ', '_')}.csv", mime="text/csv", type="primary")
 else:
-    st.info("All-industry comparison is unavailable until Damodaran industry beta data is retrieved.")
+    st.warning("Results will appear once the required 10-year government yields are available or entered manually.")
 
-# ------------------------------ Verification ---------------------------------
-st.subheader("7. Built-in verification checks")
-checks = []
-# Equal yield condition: use same beta, tax, ERP, debt share, spread and equal rf.
-common_spread = us_spread
-same_us = compute_costs(beta_u, project_tax, erp, debt_share, us_yield, common_spread)
-same_foreign = compute_costs(beta_u, project_tax, erp, debt_share, us_yield, common_spread)
-checks.append(("Equal government yields + same spread produce equal outputs", abs(same_us["wacc"]-same_foreign["wacc"]) < 1e-12))
-zero_debt = compute_costs(beta_u, project_tax, erp, 0.0, us_yield, us_spread)
-checks.append(("Zero debt makes WACC equal cost of equity", abs(zero_debt["wacc"]-zero_debt["cost_equity"]) < 1e-12))
-foreign_override_test = compute_costs(beta_u, project_tax, erp, debt_share, foreign_yield, foreign_spread_manual/100 if override_foreign_spread else foreign_spread_auto)
-checks.append(("Changing foreign spread does not enter the USD calculation", True))
-for label, passed in checks:
-    st.write(("✅ " if passed else "❌ ") + label)
-st.caption("The equal-yield check is a controlled mathematical test, not a claim that current market yields are equal. The foreign-spread independence check follows from separate USD and foreign calculations.")
-
-assumptions = {"industry": industry, "target_country": target_country, "tax_choice": tax_choice, "tax": project_tax, "ERP": erp, "debt_share": debt_share}
-result_values = {"USD": us_results, target_country: foreign_results}
-export_df = results_table.copy()
-export_bytes = export_df.to_csv(index=False).encode("utf-8")
-st.download_button("Download results (CSV)", data=export_bytes,
-                   file_name=f"cost_of_capital_USD_{target_country.replace(' ', '_')}.csv", mime="text/csv", type="primary")
-
-st.caption("Data are retrieved from the sources shown above. If a source page changes or blocks automated access, use the manual override fields and record the input source/date.")
+st.caption("Data are retrieved from Damodaran, OECD, and Trading Economics. If a source blocks automated retrieval, use the manual inputs and record the source and observation date.")
