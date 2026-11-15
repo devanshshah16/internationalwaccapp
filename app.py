@@ -959,28 +959,39 @@ with st.sidebar:
         else foreign_tax_auto
     )
 
+    # TAX RATE — VALIDATED INPUT
+    
+    tax_default = (
+        selected_tax * 100
+        if selected_tax is not None
+        else 25.0
+    )
+    
+    if not 0 <= tax_default <= 60:
+        tax_default = 25.0
+        selected_tax = None
+    
     override_tax = st.checkbox(
         "Override project tax rate",
-        value=selected_tax is None
+        value=selected_tax is None,
+        key="override_project_tax"
     )
-
+    
     tax_manual = st.number_input(
         "Project corporate tax rate (%)",
         min_value=0.0,
         max_value=60.0,
-        value=float(
-            (selected_tax if selected_tax is not None else 25.0) * 100
-        ),
+        value=float(tax_default),
         step=0.1,
-        disabled=not override_tax
+        disabled=not override_tax,
+        key="project_tax_input"
     )
-
+    
     project_tax = (
         tax_manual / 100
         if override_tax
         else selected_tax
     )
-
     # --------------------------------------------------------
     # FOREIGN BBB SPREAD
     # --------------------------------------------------------
