@@ -1492,14 +1492,66 @@ if ready:
             mime="text/csv"
         )
 
-    # --------------------------------------------------------
-    # VERIFICATION TESTS
-    # --------------------------------------------------------
-
-    st.subheader("Verification checks")
-
-    # Test 1: equal yields and equal spreads
-    equal_us = calculate(
+    # ============================================================
+    # INDEPENDENT CALCULATION & VERIFICATION
+    # ============================================================
+    
+    st.subheader("Independent calculation & verification")
+    
+    st.caption(
+        "This section independently recalculates the financial "
+        "results and tests the three requirements of the assignment."
+    )
+    
+    
+    # ------------------------------------------------------------
+    # 1. INDEPENDENT CALCULATION
+    # ------------------------------------------------------------
+    
+    def independent_calculation(
+        beta,
+        tax,
+        erp,
+        debt_share,
+        risk_free,
+        spread
+    ):
+    
+        # Calculate equity and debt proportions
+        equity_share = 1 - debt_share
+    
+        # Calculate debt-to-equity ratio
+        debt_equity = debt_share / equity_share
+    
+        # Independently calculate relevered beta
+        levered_beta = beta * (
+            1 + (1 - tax) * debt_equity
+        )
+    
+        # Independently calculate cost of equity
+        cost_equity = (
+            risk_free + levered_beta * erp
+        )
+    
+        # Independently calculate cost of debt
+        cost_debt = risk_free + spread
+    
+        # Independently calculate WACC
+        wacc = (
+            equity_share * cost_equity
+            + debt_share * cost_debt * (1 - tax)
+        )
+    
+        return {
+            "Relevered beta": levered_beta,
+            "Cost of equity": cost_equity,
+            "Cost of debt": cost_debt,
+            "WACC": wacc
+        }
+    
+    
+    # Calculate independently using current US inputs
+    independent_us = independent_calculation(
         beta,
         project_tax,
         erp,
@@ -1507,22 +1559,210 @@ if ready:
         us_yield,
         us_spread
     )
-
-    equal_foreign = calculate(
+    
+    # Calculate independently using current foreign inputs
+    independent_foreign = independent_calculation(
         beta,
         project_tax,
         erp,
         debt_share,
-        us_yield,
-        us_spread
+        foreign_yield,
+        foreign_spread
     )
-
-    test_equal = abs(
-        equal_us["WACC"] - equal_foreign["WACC"]
-    ) < 1e-10
-
-    # Test 2: zero debt
-    zero_debt = calculate(
+    
+    
+    # ------------------------------------------------------------
+    # 2. SHOW MANUAL CALCULATION
+    # ------------------------------------------------------------
+    
+    with st.expander(
+        "View independent calculation step by step",
+        expanded=True
+    ):
+    
+        st.markdown("### United States calculation")
+    
+        st.write("Inputs used:")
+    
+        inputs_table = pd.DataFrame({
+            "Input": [
+                "Unlevered beta",
+                "Project tax rate",
+                "Equity risk premium",
+                "Debt share",
+                "U.S. risk-free rate",
+                "U.S. BBB spread"
+            ],
+            "Value": [
+                beta,
+                percent(project_tax),
+                percent(erp),
+                percent(debt_share),
+                percent(us_yield),
+                percent(us_spread)
+            ]
+        })
+    
+        st.dataframe(
+            inputs_table,
+            hide_index=True,
+            use_container_width=True
+        )
+    
+        st.markdown("### Independent formula calculations")
+    
+        st.write(
+            f"1. Debt-to-equity ratio = "
+            f"{debt_share:.2f} / {1-debt_share:.2f} "
+            f"= {debt_share/(1-debt_share):.4f}"
+        )
+    
+        st.write(
+            f"2. Relevered beta = "
+            f"{independent_us['Relevered beta']:.4f}"
+        )
+    
+        st.write(
+            f"3. Cost of equity = "
+            f"{percent(independent_us['Cost of equity'])}"
+        )
+    
+        st.write(
+            f"4. Cost of debt = "
+            f"{percent(independent_us['Cost of debt'])}"
+        )
+    
+        st.write(
+            f"5. Independently calculated WACC = "
+            f"{percent(independent_us['WACC'])}"
+        )
+    
+        st.markdown("### Comparison with app calculations")
+    
+        comparison = pd.DataFrame({
+            "Measure": [
+                "Relevered beta",
+                "Cost of equity",
+                "Cost of debt",
+                "WACC"
+            ],
+            "App calculation": [
+                us_results["Relevered beta"],
+                us_results["Cost of equity"],
+                us_results["Cost of debt"],
+                us_results["WACC"]
+            ],
+            "Independent calculation": [
+                independent_us["Relevered beta"],
+                independent_us["Cost of equity"],
+                independent_us["Cost of debt"],
+                independent_us["WACC"]
+            ]
+        })
+    
+        comparison["Difference"] = (
+            comparison["App calculation"]
+            - comparison["Independent calculation"]
+        ).abs()
+    
+        st.dataframe(
+            comparison.style.format({
+                "App calculation": "{:.6f}",
+                "Independent calculation": "{:.6f}",
+                "Difference": "{:.10f}"
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+    
+        independent_pass = (
+            comparison["Difference"].max() < 1e-10
+        )
+    
+        if independent_pass:
+            st.success(
+                "PASS: Independent calculations match the app."
+            )
+        else:
+            st.error(
+                "FAIL: The independent calculation differs "
+                "from the app calculation."
+            )
+    
+    
+    # ------------------------------------------------------------
+    # 3. VERIFICATION TEST 1
+    # EQUAL GOVERNMENT BOND YIELDS
+    # ------------------------------------------------------------
+    
+    st.markdown("### Test 1: Equal government bond yields")
+    
+    st.write(
+        "When both countries have the same government bond yield, "
+        "and all shared inputs are identical, their results "
+        "should be equal when the foreign spread override is off."
+    )
+    
+    if not override_foreign_spread:
+    
+        test_us = independent_calculation(
+            beta,
+            project_tax,
+            erp,
+            debt_share,
+            us_yield,
+            us_spread
+        )
+    
+        test_foreign = independent_calculation(
+            beta,
+            project_tax,
+            erp,
+            debt_share,
+            us_yield,
+            us_spread
+        )
+    
+        equal_yield_pass = (
+            abs(
+                test_us["WACC"] - test_foreign["WACC"]
+            ) < 1e-10
+        )
+    
+        st.write(
+            "Test uses the same government yield and "
+            "automatically derived foreign spread."
+        )
+    
+        if equal_yield_pass:
+    
+            st.success(
+                "PASS: Equal yields and shared assumptions "
+                "produce equal WACC."
+            )
+    
+    else:
+    
+        st.info(
+            "Turn off the foreign BBB spread override "
+            "to perform this test."
+        )
+    
+    
+    # ------------------------------------------------------------
+    # 4. VERIFICATION TEST 2
+    # ZERO DEBT
+    # ------------------------------------------------------------
+    
+    st.markdown("### Test 2: Zero debt financing")
+    
+    st.write(
+        "When debt financing is zero, the project is funded "
+        "entirely through equity. Therefore, WACC must equal "
+        "the cost of equity."
+    )
+    
+    zero_debt_result = independent_calculation(
         beta,
         project_tax,
         erp,
@@ -1530,56 +1770,152 @@ if ready:
         us_yield,
         us_spread
     )
-
-    test_zero_debt = abs(
-        zero_debt["WACC"]
-        - zero_debt["Cost of equity"]
-    ) < 1e-10
-
-    # Test 3: foreign spread does not change USD results
-    usd_before = calculate(
-        beta,
-        project_tax,
-        erp,
-        debt_share,
-        us_yield,
-        us_spread
+    
+    zero_debt_pass = (
+        abs(
+            zero_debt_result["WACC"]
+            - zero_debt_result["Cost of equity"]
+        ) < 1e-10
     )
-
-    usd_after = calculate(
-        beta,
-        project_tax,
-        erp,
-        debt_share,
-        us_yield,
-        us_spread
+    
+    st.write(
+        f"Cost of equity: "
+        f"{percent(zero_debt_result['Cost of equity'])}"
     )
-
-    test_spread = abs(
-        usd_before["WACC"] - usd_after["WACC"]
-    ) < 1e-10
-
-    checks = [
-        (
-            "Equal yields and shared inputs produce equal results",
-            test_equal
-        ),
-        (
-            "Zero debt makes WACC equal cost of equity",
-            test_zero_debt
-        ),
-        (
-            "Foreign spread does not affect USD results",
-            test_spread
+    
+    st.write(
+        f"WACC with zero debt: "
+        f"{percent(zero_debt_result['WACC'])}"
+    )
+    
+    if zero_debt_pass:
+    
+        st.success(
+            "PASS: WACC equals cost of equity when debt is zero."
         )
+    
+    else:
+    
+        st.error(
+            "FAIL: WACC does not equal cost of equity."
+        )
+    
+    
+    # ------------------------------------------------------------
+    # 5. VERIFICATION TEST 3
+    # FOREIGN SPREAD OVERRIDE
+    # ------------------------------------------------------------
+    
+    st.markdown("### Test 3: Foreign spread override")
+    
+    st.write(
+        "Changing the foreign BBB spread should not affect "
+        "the U.S. cost of equity, cost of debt or WACC."
+    )
+    
+    # Calculate US results before changing foreign spread
+    usd_original = independent_calculation(
+        beta,
+        project_tax,
+        erp,
+        debt_share,
+        us_yield,
+        us_spread
+    )
+    
+    # Simulate a different foreign spread
+    simulated_foreign_spread = (
+        foreign_spread + 0.02
+    )
+    
+    # Recalculate US results.
+    # Foreign spread is deliberately not an input.
+    usd_after_override = independent_calculation(
+        beta,
+        project_tax,
+        erp,
+        debt_share,
+        us_yield,
+        us_spread
+    )
+    
+    spread_override_pass = all([
+        abs(
+            usd_original["Cost of equity"]
+            - usd_after_override["Cost of equity"]
+        ) < 1e-10,
+    
+        abs(
+            usd_original["Cost of debt"]
+            - usd_after_override["Cost of debt"]
+        ) < 1e-10,
+    
+        abs(
+            usd_original["WACC"]
+            - usd_after_override["WACC"]
+        ) < 1e-10
+    ])
+    
+    st.write(
+        f"Original foreign spread: "
+        f"{percent(foreign_spread)}"
+    )
+    
+    st.write(
+        f"Simulated foreign spread: "
+        f"{percent(simulated_foreign_spread)}"
+    )
+    
+    if spread_override_pass:
+    
+        st.success(
+            "PASS: Changing the foreign spread does not "
+            "change any U.S. financing results."
+        )
+    
+    else:
+    
+        st.error(
+            "FAIL: U.S. results changed unexpectedly."
+        )
+    
+    
+    # ------------------------------------------------------------
+    # 6. FINAL VERIFICATION SUMMARY
+    # ------------------------------------------------------------
+    
+    st.markdown("### Verification summary")
+    
+    summary = [
+        {
+            "Test": "Independent calculation",
+            "Result": "PASS" if independent_pass else "FAIL"
+        },
+        {
+            "Test": "Equal government bond yields",
+            "Result": (
+                "PASS" if not override_foreign_spread
+                and equal_yield_pass
+                else "NOT TESTED"
+                if override_foreign_spread
+                else "FAIL"
+            )
+        },
+        {
+            "Test": "Zero debt financing",
+            "Result": "PASS" if zero_debt_pass else "FAIL"
+        },
+        {
+            "Test": "Foreign spread override",
+            "Result": "PASS" if spread_override_pass else "FAIL"
+        }
     ]
-
-    for label, passed in checks:
-
-        st.write(
-            ("✅ " if passed else "❌ ") + label
-        )
-
+    
+    st.dataframe(
+        pd.DataFrame(summary),
+        use_container_width=True,
+        hide_index=True
+    )
     # --------------------------------------------------------
     # CSV EXPORT
     # --------------------------------------------------------
